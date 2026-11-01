@@ -1,0 +1,4 @@
+logs/
+backups/
+*.out
+*.err
