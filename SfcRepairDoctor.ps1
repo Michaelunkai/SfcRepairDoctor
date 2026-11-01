@@ -180,7 +180,8 @@ function Restart-CryptSvcRebuild {
         $pct = [int](100 * ($h.Sample - $h.Unsigned) / [math]::Max(1,$h.Sample))
         Write-Progress -Activity 'Catalog DB rebuild' -Status "$pct% of probe files trusted" -PercentComplete $pct
         Log ("    probe {0}: {1}/{2} unsigned ({3:mm\:ss})" -f ($i+1), $h.Unsigned, $h.Sample, $sw.Elapsed)
-        if ($h.Unsigned -eq $prev -and $i -ge 1) { break }
+        if ($h.Unsigned -eq 0) { break }
+        if ($h.Unsigned -eq $prev -and $i -ge 8) { break }   # stuck: give the DB ~40s more than a single stable reading
         $prev = $h.Unsigned
         Start-Sleep -Seconds 5
     }

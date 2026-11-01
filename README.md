@@ -135,3 +135,9 @@ SfcRepairDoctor/
 Made for anyone stuck in the endless `sfc /scannow` loop. 🛡️
 
 </div>
+
+## If it keeps coming back
+
+If `sfc` is clean, then you run a cleaner and the corruption returns, a cleanup script is probably emptying
+`C:\Windows\System32\catroot` or `CatRoot2`. Look for those paths in your cleanup scripts' pattern lists and remove
+them (also `C:\Windows\Installer\*`). Never treat them as cache.
