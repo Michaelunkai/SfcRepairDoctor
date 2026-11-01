@@ -24,6 +24,8 @@
 | ✅ **Verifies** | Runs `sfc /scannow` in a loop, parsing CBS.log for that run only, until it is clean |
 | 📜 **Logs everything** | Timestamped log for each run in `logs\` |
 
+| 🏁 **Ends with `sfc /scannow`** | The final command is always a plain native `sfc /scannow` with live output. It runs from a `finally` block, so it happens even if a phase fails. Then control goes straight back to your PowerShell prompt (no `pause`) |
+
 Exit code **0** means only one thing: the final `sfc /scannow` reported **no integrity violations**.
 
 ---
@@ -38,7 +40,7 @@ cd SfcRepairDoctor
 
 | Option | Effect |
 |---|---|
-| `-DiagnoseOnly` | Only check and report, change nothing |
+| `-DiagnoseOnly` | Only check and report, change nothing (skips the final sfc too) |
 | `-SkipDism` | Skip DISM (about 3 min instead of about 17) |
 | `-MaxSfcPasses N` | Max SFC verify passes (default 3) |
 
@@ -81,7 +83,8 @@ flowchart LR
     D --> E[5 DISM RestoreHealth]
     E --> F[6 SFC verify loop]
     F -->|still dirty| D
-    F -->|clean| G((✅ exit 0))
+    F -->|clean| G[7 Final native sfc /scannow]
+    G --> H((✅ back to PowerShell))
 ```
 
 Every phase is **idempotent**. On a healthy system it restores nothing and only verifies.

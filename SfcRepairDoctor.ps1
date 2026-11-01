@@ -32,7 +32,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$Root      = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Launched from PowerShell 7, Windows PowerShell inherits pwsh's PSModulePath and then
+# fails to load its own Microsoft.PowerShell.Security (Get-AuthenticodeSignature). Reset it.
+if ($PSVersionTable.PSEdition -ne 'Core') {
+    $env:PSModulePath = @(
+        (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'),
+        (Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules'),
+        (Join-Path $PSHOME 'Modules')
+    ) -join ';'
+}
+$Root     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $LogDir    = Join-Path $Root 'logs'
 $Stamp     = Get-Date -Format 'yyyyMMdd-HHmmss'
 $RunLog    = Join-Path $LogDir "run-$Stamp.log"
@@ -179,6 +188,11 @@ function Restart-CryptSvcRebuild {
 }
 
 # ======================================================================
+# Whatever happens below (success, failure, error), a plain native `sfc /scannow`
+# is guaranteed to be the very last command; then the script returns to the shell.
+$script:ExitCode = 1
+$script:RunFinalSfc = $true
+try {
 Log "SfcRepairDoctor run $Stamp  (log: $RunLog)" 'White'
 $os = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
 Log ("OS: {0} {1} build {2}.{3}" -f $os.ProductName, $os.DisplayVersion, $os.CurrentBuild, $os.UBR)
@@ -192,7 +206,7 @@ Log "  package catalogs on disk : $($pkgCats.Count)"
 Log ("  signature probe          : {0}/{1} System32 DLLs NOT trusted" -f $health.Unsigned, $health.Sample) ($(if ($health.Unsigned) {'Yellow'} else {'Green'}))
 $lastSfc = Get-CbsFindings ((Get-Date).AddHours(-12))
 Log "  CBS (last 12h): PnP corrupt=$($lastSfc.PnpCorrupt.Count)  SR cannot-repair=$($lastSfc.SrCannot.Count)  SR repaired=$($lastSfc.SrRepaired.Count)"
-if ($DiagnoseOnly) { Log 'DiagnoseOnly - stopping.' 'Cyan'; exit 0 }
+if ($DiagnoseOnly) { Log 'DiagnoseOnly - stopping (no sfc run, nothing changed).' 'Cyan'; $script:RunFinalSfc = $false; $script:ExitCode = 0; return }
 
 Phase 2 'Backup (reversible)'
 $bakDir = Join-Path $Root "backups\$Stamp"
@@ -307,8 +321,25 @@ for ($pass = 1; $pass -le $MaxSfcPasses; $pass++) {
 Log ''
 if ($clean) {
     Log 'SUCCESS: sfc /scannow is clean. No reboot was needed.' 'Green'
-    exit 0
+    $script:ExitCode = 0
 } else {
     Log "NOT CLEAN after $MaxSfcPasses passes - see $RunLog and $CbsLog" 'Red'
-    exit 1
 }
+} catch {
+    Log "ERROR: $($_.Exception.Message)" 'Red'
+    $script:ExitCode = 1
+} finally {
+    Write-Progress -Activity 'SfcRepairDoctor' -Completed
+    if ($script:RunFinalSfc) {
+        Log "Repair log: $RunLog" 'DarkGray'
+        Log 'FINAL: running sfc /scannow (live output)...' 'Cyan'
+        # Unicode so sfc's UTF-16 output decodes correctly even when redirected.
+        $prevEnc = [Console]::OutputEncoding
+        try { [Console]::OutputEncoding = [Text.Encoding]::Unicode } catch {}
+        & "$Sys32\sfc.exe" /scannow
+        $sfcExit = $LASTEXITCODE
+        try { [Console]::OutputEncoding = $prevEnc } catch {}
+        if ($sfcExit -ne 0) { $script:ExitCode = 1 }
+    }
+}
+exit $script:ExitCode
